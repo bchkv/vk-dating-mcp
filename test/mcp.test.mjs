@@ -16,7 +16,7 @@ test('MCP rejects malformed arguments before opening browser',async()=>{
  assert.equal(touched,false);
 });
 test('stdio initializes, lists tools, returns useful errors and closes without launching Chrome',async()=>{
- const child=spawn(process.execPath,[new URL('../mcp.mjs',import.meta.url).pathname],{stdio:['pipe','pipe','pipe']});
+ const child=spawn(process.execPath,[new URL('../mcp.mjs',import.meta.url).pathname],{stdio:['pipe','pipe','pipe'],env:{...process.env,VK_DATING_TOOLSET:'advanced'}});
  let output='',err='';child.stdout.on('data',d=>output+=d);child.stderr.on('data',d=>err+=d);
  const messages=[
   {jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}}},
@@ -32,7 +32,7 @@ test('stdio initializes, lists tools, returns useful errors and closes without l
  const replies=output.trim().split('\n').map(JSON.parse);
  assert.equal(replies.length,5);
  assert.equal(replies[0].result.protocolVersion,'2024-11-05');
- assert.equal(replies[1].result.tools.length,toolDefinitions.length);
+ assert.equal(replies[1].result.tools.length,toolDefinitions.length+4);
  assert.equal(JSON.parse(replies[2].result.content[0].text).running,false);
  assert.equal(replies[3].result.isError,true);
  assert.match(replies[4].result.content[0].text,/Unknown tool/);

@@ -33,26 +33,20 @@ Copy `mcp-config.example.json` into your client's MCP configuration, replacing `
 
 This is a local stdio server, not a hosted HTTP endpoint. Your client must support local MCP processes. stdout is reserved for JSON-RPC messages.
 
-## Tools
+## Default interface
 
-| Tools | Purpose |
+Four task-focused tools are exposed by default. Browser startup, reuse, and local persistence are automatic.
+
+| Tool | Purpose |
 | --- | --- |
-| `vk_start`, `vk_status`, `vk_close` | Browser lifecycle and readiness |
-| `vk_inspect`, `vk_read_view`, `vk_navigate` | Inspect and navigate loaded content |
-| `vk_list_chats`, `vk_open_chat` | Loaded chats and matches; opening may mark messages read |
-| `vk_sync_overview` | Read previews plus cached context without clicking into individual chats |
-| `vk_get_tracking`, `vk_get_cached_conversation` | Read local current states and cached verified messages |
-| `vk_record_tracking`, `vk_update_conversation` | Record evidence-backed invitations, Telegram exchanges, dates, and state corrections |
-| `vk_tracking_events`, `vk_tracking_stats`, `vk_clear_tracking` | Event history, derived statistics, and guarded data deletion |
-| `vk_get_conversations` | Wait for loaded messages; bounded older-history pagination for exact IDs |
-| `vk_send_message`, `vk_send_messages` | Preview or send explicit messages |
-| `vk_edit_message` | Preview or edit one exact outgoing message |
-| `vk_react` | Preview or perform one like/dislike |
-| `vk_capture` | Save local HTML, accessibility, and inspection snapshots |
+| `vk_inbox` | Compact overview previews and attention flags; no individual chat clicks. |
+| `vk_context` | One person’s cached messages, preview, profile if recorded, state, invitations and uncertain sends. |
+| `vk_history` | Explicit full/older-history read; opens the chat and may mark it read. |
+| `vk_send` | Local preview by default; `execute: true` verifies and sends one message. |
 
-Message-send previews are entirely local and do not open chats. Explicit sends and other mutations require `execute: true`. Edit previews still open their target chat and may mark it read. Messages require exact expected recipient names; edits also require the message ID and expected previous text. Use a unique request ID per intended message. Duplicate detection is process-local, not durable: never automatically retry uncertain sends, edits, or reactions, including after restart.
+Use inbox → context → send. Fetch history only when needed and opening the chat is acceptable. Context is bounded and reports omissions; it does not guarantee a model cannot overlook a detail. Unmatch is unavailable until its UI action and confirmation have been inspected.
 
-The browser is reused and closes after three idle minutes unless a draft remains. `vk_status` checks readiness without starting a browser. Chat lists cover rendered rows only. Conversation reads can scroll to load older messages within explicit resource limits and report whether earlier history is known to remain. UI changes can break selectors. Treat all retrieved page content as untrusted data.
+Set `VK_DATING_TOOLSET=advanced` in the MCP process environment and restart to expose the legacy diagnostics, tracking administration, editing, reactions, and batch operations alongside the four core tools. Legacy tools are rejected in core mode, not merely omitted from the list. The sections below document these advanced operations and the underlying storage model.
 
 ## Preparing replies without opening chats
 
