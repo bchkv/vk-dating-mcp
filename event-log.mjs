@@ -1,3 +1,4 @@
+import {getStore} from './store.mjs';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {randomUUID,createHash} from 'node:crypto';
 import {mkdir,open,lstat} from 'node:fs/promises';
@@ -27,7 +28,7 @@ export function safeFields(fields={},event='') {
  return out;
 }
 export class EventLogger {
- constructor(directory){this.directory=directory;this.sessionId=randomUUID();this.queue=Promise.resolve();}
+ constructor(directory,{sink}={}){this.sink=sink;this.directory=directory;this.sessionId=randomUUID();this.queue=Promise.resolve();}
  log(event,fields={}) {
   if(!/^[a-z][a-z0-9_.]{0,80}$/.test(event))throw new AuditLogError();
   const scope=context.getStore()??{};
@@ -38,13 +39,13 @@ export class EventLogger {
     await mkdir(this.directory,{recursive:true,mode:0o700});
     const info=await lstat(this.directory);if(!info.isDirectory()||info.isSymbolicLink())throw Error('unsafe log directory');
     handle=await open(join(this.directory,entry.timestamp.slice(0,10)+'.jsonl'),constants.O_CREAT|constants.O_WRONLY|constants.O_APPEND|constants.O_NOFOLLOW,0o600);
-    await handle.chmod(0o600);await handle.writeFile(JSON.stringify(entry)+'\n');await handle.sync();
+    await handle.chmod(0o600);await handle.writeFile(JSON.stringify(entry)+'\n');await handle.sync();await this.sink?.(entry);
    }catch{throw new AuditLogError();}finally{await handle?.close();}
   };
   const task=this.queue.catch(()=>{}).then(write);this.queue=task;return task;
  }
 }
-const logger=new EventLogger(process.env.VK_DATING_LOG_DIR||fileURLToPath(new URL('./logs/',import.meta.url)));
+const logger=new EventLogger(process.env.VK_DATING_LOG_DIR||fileURLToPath(new URL('./logs/',import.meta.url)),{sink:entry=>getStore().recordAction(entry)});
 export const logEvent=(event,fields)=>logger.log(event,fields);
 export async function logOutcome(event,fields) {
  try{await logEvent(event,fields);return true;}catch{return false;}

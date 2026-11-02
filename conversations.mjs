@@ -2,6 +2,7 @@ import {logOutcome} from './event-log.mjs';
 import {navigate,openChat} from './adapter.mjs';
 import {sendMessage} from './send-message.mjs';
 import {historyOptions,readHistory} from './history.mjs';
+import {getStore} from './store.mjs';
 
 export function validateBatch(name,args) {
  if(name==='vk_get_conversations') {
@@ -37,10 +38,14 @@ export async function getConversation(frame,userId,options={}) {
  await header.waitFor({timeout:5000});
  if(await header.count()!==1)throw Error('Ambiguous conversation header');
  const name=(await header.innerText()).trim();
+ const store=getStore();
+ store.observeMatch(userId,{name,source:'opened_chat'});
+ store.markLoading(userId,name);
  const history=await readHistory(panel,options);
+ const tracking=store.observeConversation({userId,name,...history},options);
  for(const message of history.messages)await logOutcome('message.observed',{userId,messageId:message.messageId,outgoing:message.outgoing,text:message.text});
  await logOutcome('conversation.observed',{userId,count:history.messages.length});
- return {userId,name,...history,untrustedContent:true};
+ return {userId,name,...history,tracking,untrustedContent:true};
 }
 
 export async function getConversations(frame,args,read=getConversation) {

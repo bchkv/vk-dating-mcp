@@ -43,6 +43,17 @@ export function snapshotHistory(panel) {
     messageId: row.getAttribute('data-list-item-message-id'),
     outgoing: !!row.querySelector('[data-message-bubble="true"].UzN_JO3e'),
     text: row.querySelector('[data-message-bubble="true"] span.UUBlt8_A')?.innerText ?? null,
+    // Preserve actual times only when the DOM provides an unambiguous ISO timestamp.
+    sentAt: (() => {
+      const raw = row.querySelector('time[datetime]')?.getAttribute('datetime') ?? row.getAttribute('data-sent-at');
+      return raw && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(raw) && Number.isFinite(Date.parse(raw)) ? new Date(raw).toISOString() : null;
+    })(),
+    editedAt: (() => {
+      const raw = row.getAttribute('data-edited-at');
+      return raw && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(raw) && Number.isFinite(Date.parse(raw)) ? new Date(raw).toISOString() : null;
+    })(),
+    replyToId: row.getAttribute('data-reply-to-id') ?? null,
+    direction: row.querySelector('[data-message-bubble="true"].UzN_JO3e') ? 'outgoing' : row.querySelector('[data-message-bubble="true"]') ? 'incoming' : 'unknown',
   }));
   const editors = [...panel.querySelectorAll('textarea[data-testid="write-bar"]')].filter(visible);
   return {messages, loading, loadError, empty, beginningReached, draftPresent: editors.some(el => !!el.value)};

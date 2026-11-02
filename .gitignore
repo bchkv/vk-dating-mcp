@@ -11,3 +11,8 @@ backup*/
 *.log
 *.jsonl
 .DS_Store
+data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*

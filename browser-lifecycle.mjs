@@ -12,7 +12,7 @@ export async function withBrowser(session,name,args,operation) {
  try {
   const wasRunning=!!session.page&&!session.page.isClosed();
   await session.start();
-  if(!wasRunning&&!['vk_start','vk_status','vk_navigate','vk_list_chats','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)) {
+  if(!wasRunning&&!['vk_start','vk_status','vk_navigate','vk_list_chats','vk_sync_overview','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)) {
    const frame=await session.frame();
    await navigate(frame,state.tab);
    if(state.chatId&&name!=='vk_open_chat') {
@@ -25,7 +25,7 @@ export async function withBrowser(session,name,args,operation) {
    await frame.locator(`[data-source="chats_list"][data-user-id="${args.userId}"], [data-source="new_chats_list"][data-user-id="${args.userId}"]`).waitFor({state:'visible',timeout:10000});
   }
   if(['vk_open_chat','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)){state.tab='/chats';state.chatId=args.userId;}
-  if(name==='vk_list_chats'){state.tab='/chats';state.chatId=null;}
+  if(['vk_list_chats','vk_sync_overview'].includes(name)){state.tab='/chats';state.chatId=null;}
   if(name==='vk_navigate'){state.tab={profiles:'/',chats:'/chats',likes:'reactions',profile:'/tab_profile'}[args.tab];state.chatId=null;}
   result=await operation();
   if(name==='vk_get_conversations'&&result.conversations?.length){state.tab='/chats';state.chatId=result.conversations.at(-1).userId;}

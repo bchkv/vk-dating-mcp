@@ -1,5 +1,7 @@
-# 0.4.0 — Loaded conversation history
+# 0.5.0 — Preview-first replies and local tracking
 
-Conversation reads now wait for visible loaders and a settled message list, fail explicitly on initial loading errors, and support bounded backward scrolling with exclusive message-ID cursors. Results distinguish confirmed older messages, a confirmed beginning, and unknown completeness. No-growth scrolls never imply a complete conversation. Existing draft protection and message logging remain in place; no persistent cache is introduced.
+Added a local SQLite event stream and current conversation records, observed messages/revisions, matches, invitations, Telegram exchanges, dates, and correlated action outcomes. Tracking classifications retain message or preview provenance and confidence, support manual corrections, and keep actual timestamps separate from discovery times. Derived statistics report missing timestamp and history coverage limitations.
 
-History markers and scroll behavior are covered by synthetic UI tests. Unit tests also cover delayed loaders, loading failures, pagination overlap and virtualization, cursor bounds, and incomplete results. UI changes may require adapter updates; live account history has not been validated in this release.
+Overview synchronization returns previews plus cached context without opening individual conversations. Single and batch send previews now run locally; explicit execution still opens and validates recipients. Full conversation reads retain the bounded, loading-aware history pagination introduced in 0.4.0.
+
+The database and its sidecars are ignored by Git. Node.js 22.13+ is required for the built-in SQLite module. No third-party database or model API is used. Existing JSONL logs are preserved separately, not silently backfilled into verified history.

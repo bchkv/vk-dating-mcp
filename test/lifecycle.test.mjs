@@ -37,3 +37,14 @@ test('never guesses among ambiguous matches',async()=>{
  const frame={locator:()=>({count:async()=>2,click:async()=>{throw Error('must not click');}})};
  await assert.rejects(openChat(frame,'42'),/ambiguous/);
 });
+
+test('overview startup never restores a previously opened conversation', async () => {
+ let frameCalls=0;
+ const session={page:null,idleTimeoutMs:180000,cancelIdleClose(){},armIdleClose(){},
+  async start(){this.page={isClosed:()=>false};},async close(){this.page=null;},
+  async frame(){frameCalls++;throw Error('must not restore an individual chat');}};
+ await withBrowser(session,'vk_get_conversations',{},async()=>({conversations:[{userId:'42'}]}));
+ await session.close();
+ await withBrowser(session,'vk_sync_overview',{},async()=>({conversations:[]}));
+ assert.equal(frameCalls,0);
+});
