@@ -1,9 +1,5 @@
-# Publication preparation — 0.3.0
+# 0.4.0 — Loaded conversation history
 
-Clean source export from the installed server. No account profile, logs, captures, local backups, or machine-specific client configuration is included. MIT licensed.
+Conversation reads now wait for visible loaders and a settled message list, fail explicitly on initial loading errors, and support bounded backward scrolling with exclusive message-ID cursors. Results distinguish confirmed older messages, a confirmed beginning, and unknown completeness. No-growth scrolls never imply a complete conversation. Existing draft protection and message logging remain in place; no persistent cache is introduced.
 
-Added visible first-login command, portable client configuration example, install instructions, privacy and contribution documentation, and Linux CI on Node 22/24. Status queries no longer start the browser. Updated stale protocol tests and made the idle shutdown test wait for the asynchronous logged close.
-
-Validation: 40 unit/protocol tests pass locally on Node 26. Two Playwright browser integration tests could not run because the macOS sandbox rejects Chromium's Mach port registration. They remain required in the full npm test CI suite. Manual first-login flow has not been exercised against a live account in this copy.
-
-Before publishing: run the full CI suite in an unrestricted environment. Create the GitHub repository and push this source only; never upload the installed server directory or runtime data.
+History markers and scroll behavior are covered by synthetic UI tests. Unit tests also cover delayed loaders, loading failures, pagination overlap and virtualization, cursor bounds, and incomplete results. UI changes may require adapter updates; live account history has not been validated in this release.

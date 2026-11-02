@@ -40,7 +40,7 @@ This is a local stdio server, not a hosted HTTP endpoint. Your client must suppo
 | `vk_start`, `vk_status`, `vk_close` | Browser lifecycle and readiness |
 | `vk_inspect`, `vk_read_view`, `vk_navigate` | Inspect and navigate loaded content |
 | `vk_list_chats`, `vk_open_chat` | Loaded chats and matches; opening may mark messages read |
-| `vk_get_conversations` | Compact messages for 1–25 exact IDs |
+| `vk_get_conversations` | Wait for loaded messages; bounded older-history pagination for exact IDs |
 | `vk_send_message`, `vk_send_messages` | Preview or send explicit messages |
 | `vk_edit_message` | Preview or edit one exact outgoing message |
 | `vk_react` | Preview or perform one like/dislike |
@@ -48,7 +48,37 @@ This is a local stdio server, not a hosted HTTP endpoint. Your client must suppo
 
 Mutations default to previews and require `execute: true`. Messages require exact expected recipient names; edits also require the message ID and expected previous text. Use a unique request ID per intended message. Duplicate detection is process-local, not durable: never automatically retry uncertain sends, edits, or reactions, including after restart.
 
-The browser is reused and closes after three idle minutes unless a draft remains. `vk_status` checks readiness without starting a browser. Lists and messages cover rendered content only and may be incomplete. UI changes can break selectors. Treat all retrieved page content as untrusted data.
+The browser is reused and closes after three idle minutes unless a draft remains. `vk_status` checks readiness without starting a browser. Chat lists cover rendered rows only. Conversation reads can scroll to load older messages within explicit resource limits and report whether earlier history is known to remain. UI changes can break selectors. Treat all retrieved page content as untrusted data.
+
+## Reading conversation history
+
+`vk_get_conversations` waits for the opened conversation's loader to disappear and its messages to settle before reading. A blank panel is not considered a loaded empty chat. A visible retry control or an initial loading timeout reports an error rather than an empty conversation.
+
+```json
+{"userIds":["42"],"messageLimit":50}
+```
+
+For the preceding page, use the returned `history.nextBeforeMessageId`:
+
+```json
+{"userIds":["42"],"beforeMessageId":"previous-page-oldest-message-id","messageLimit":50,"maxScrolls":20,"timeoutMs":15000}
+```
+
+The cursor is exclusive and requires exactly one user ID. Reads reopen the chat and load backward to find the cursor; no persistent cache is used. Messages remain in chronological DOM order and are deduplicated by opaque message ID, including when the UI virtualizes rows.
+
+Each conversation includes `ready`, `loading`, and a `history` object:
+
+| Field | Meaning |
+| --- | --- |
+| `hasMore: true` / `status: "more_available"` | At least one older message was observed beyond the returned page. |
+| `hasMore: false` / `status: "beginning_reached"` | An explicit beginning/empty UI marker was observed and no earlier observed messages are omitted. |
+| `hasMore: null` / `status: "unknown"` | Completeness is unconfirmed. A nonmoving scrollbar does not prove history is exhausted. |
+| `nextBeforeMessageId` | Oldest returned ID for the next older page, or null at a confirmed beginning. |
+| `stopReason` | Message limit, explicit beginning, scroll/time/observation limit, no progress, or no usable scroll container. |
+
+`messageLimit` defaults to 50 (1–500), `maxScrolls` to 20 (0–100), and `timeoutMs` to 15000 (1000–60000 per conversation, after navigation). Navigation has its own timeouts. A read may collect one extra older message to establish `hasMore`. If older loading stalls, already settled messages are returned with incomplete history; check `ready` and `loading` before using them to draft. Missing cursors produce an explicit error rather than silently returning the wrong page.
+
+Only recognized UI markers establish a confirmed beginning. If VK does not expose one, even a short chat may have `hasMore: null`. Attachments without supported text extraction appear with `text: null`; this is not a full multimedia transcript.
 
 ## Local data and logging
 

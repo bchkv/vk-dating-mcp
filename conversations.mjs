@@ -1,8 +1,13 @@
 import {logOutcome} from './event-log.mjs';
 import {navigate,openChat} from './adapter.mjs';
 import {sendMessage} from './send-message.mjs';
+import {historyOptions,readHistory} from './history.mjs';
 
 export function validateBatch(name,args) {
+ if(name==='vk_get_conversations') {
+  historyOptions(args);
+  if(args.beforeMessageId!==undefined && args.userIds?.length!==1)throw Error('beforeMessageId requires exactly one user ID');
+ }
  const ids=name==='vk_get_conversations'?args.userIds:args.messages?.map(m=>m?.userId);
  if(!Array.isArray(ids)||ids.length<1||ids.length>25||ids.some(id=>typeof id!=='string'||!/^\d+$/.test(id))||new Set(ids).size!==ids.length)throw Error('Provide 1–25 unique numeric user IDs');
  if(name==='vk_send_messages') {
@@ -19,7 +24,8 @@ async function noDraft(frame) {
  for(let i=0;i<await editors.count();i++)if(await editors.nth(i).inputValue())throw Error('Unfinished draft found; refusing to navigate');
 }
 
-export async function getConversation(frame,userId) {
+export async function getConversation(frame,userId,options={}) {
+ historyOptions(options);
  await noDraft(frame);
  await navigate(frame,'/');
  await frame.locator('#chat:visible').waitFor({state:'hidden',timeout:5000});
@@ -31,23 +37,17 @@ export async function getConversation(frame,userId) {
  await header.waitFor({timeout:5000});
  if(await header.count()!==1)throw Error('Ambiguous conversation header');
  const name=(await header.innerText()).trim();
- const messages=await panel.locator('[data-list-item-message-id]').evaluateAll(rows=>rows.slice(-50).map(row=>({
-  messageId:row.getAttribute('data-list-item-message-id'),
-  outgoing:!!row.querySelector('[data-message-bubble="true"].UzN_JO3e'),
-  text:row.querySelector('[data-message-bubble="true"] span.UUBlt8_A')?.innerText??null,
- })));
- for(const message of messages)await logOutcome('message.observed',{userId,messageId:message.messageId,outgoing:message.outgoing,text:message.text});
- await logOutcome('conversation.observed',{userId,count:messages.length});
- const editor=panel.locator('textarea[data-testid="write-bar"]:visible');
- const loading=await panel.getByText(/^(Загружается\.\.\.|Loading\.\.\.|Try Again)$/).count()>0;
- return {userId,name,messages,draftPresent:await editor.count()===1&&!!await editor.inputValue(),loading,scope:'last_50_rendered_messages',untrustedContent:true};
+ const history=await readHistory(panel,options);
+ for(const message of history.messages)await logOutcome('message.observed',{userId,messageId:message.messageId,outgoing:message.outgoing,text:message.text});
+ await logOutcome('conversation.observed',{userId,count:history.messages.length});
+ return {userId,name,...history,untrustedContent:true};
 }
 
 export async function getConversations(frame,args,read=getConversation) {
  validateBatch('vk_get_conversations',args);
  const conversations=[];
  for(const userId of args.userIds){
-  try{conversations.push(await read(frame,userId));}
+  try{conversations.push(await read(frame,userId,historyOptions(args)));}
   catch(error){return {conversations,stoppedAt:userId,error:error.message,remainingUserIds:args.userIds.slice(conversations.length+1)};}
  }
  return {conversations};
