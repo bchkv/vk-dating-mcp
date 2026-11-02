@@ -144,3 +144,15 @@ npm test
 Tests use local fixtures and mocks, not your VK account. CI runs on Linux with Node 22 and 24. `npm start` opens the legacy inspection CLI after login; it does not expose the full MCP messaging interface.
 
 Unofficial project, unaffiliated with VK. Use only with an account you control and follow the service's rules.
+
+## Reply context packs
+
+After refreshing overview previews, call `vk_get_reply_context` with `userId` to retrieve cached messages (200 by default, maximum 500), latest preview, state and evidence, all recorded invitations, dates/Telegram records, and up to 100 recent send events in one response. Coverage flags distinguish missing actual history from cached messages omitted by the limit. Older cached pages remain available through `vk_get_cached_conversation`. This is context retrieval, not a guarantee that a model will never overlook a detail.
+
+Bio text is included only when explicitly recorded through `vk_record_profile`, with its source and observation time. Automatic profile extraction is not implemented. A missing bio stays null. Before sending, check existing invitations and uncertain dispatches; identical wording is not the only way to repeat an invitation.
+
+## Responsible automation
+
+No request frequency is guaranteed safe from platform restrictions. Keep browser operations sequential, avoid unsolicited bulk messaging and swiping, use overview/cache reads instead of repeated full-history loading, and stop on authentication challenges, throttling, or account warnings. Do not automatically retry uncertain sends. This server has serialized calls, explicit execution and process-local duplicate suppression; it does not yet provide a global rate limit or automatic challenge/throttle circuit breaker. Browser headlessness does not make activity undetectable. Follow the service's current terms; this project does not bypass bot detection or CAPTCHAs.
+
+Unmatching is not implemented: the available DOM fixtures do not include an identified unmatch action and confirmation dialog.
