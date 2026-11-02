@@ -1,5 +1,5 @@
-# 0.6.0 — Four-tool default interface
+# 0.6.1 — Visible sign-in recovery
 
-The default MCP surface is now inbox, context, explicit history, and single-message preview/send. Browser lifecycle and caching run automatically. Inbox output is compact and paginated over loaded rows; detailed context is retrieved separately. Core tools include MCP behavior annotations.
+Detected VK sign-in pages now open a visible browser on the dedicated persistent profile. Authentication windows are retained until completion; a later request returns to headless browsing. Interrupted operations are not replayed. Authentication-required responses are explicit, with setup guidance when no visible browser is available. Unrelated app loading failures do not trigger login windows.
 
-Legacy diagnostics, reactions, editing, batch sends and tracking administration require VK_DATING_TOOLSET=advanced and a process restart. Hidden tools are rejected in core mode. Existing data and the advanced implementation are retained.
+The four-tool interface from 0.6.0 remains unchanged.

@@ -16,6 +16,7 @@ test('idle timer closes the dedicated browser',async()=>{
  const s=new Session();s.idleTimeoutMs=10;let closed=0;
  s.context={close:async()=>{closed++;}};
  s.page={isClosed:()=>false};s.frame=async()=>({locator:()=>({count:async()=>0})});
+ s.findAppFrame=s.frame;
  s.armIdleClose();
  const deadline=Date.now()+2000;
  while(!closed && Date.now()<deadline) await new Promise(r=>setTimeout(r,10));
@@ -25,6 +26,7 @@ test('active operations cancel idle shutdown; unfinished drafts are retained',as
  const s=new Session();s.idleTimeoutMs=10;let closed=0;
  s.context={close:async()=>{closed++;}};s.page={isClosed:()=>false};
  s.frame=async()=>({locator:()=>({count:async()=>1,nth(){return this;},inputValue:async()=>'unfinished'})});
+ s.findAppFrame=s.frame;
  s.armIdleClose();await new Promise(r=>setTimeout(r,25));assert.equal(closed,0);
  s.cancelIdleClose();assert.equal(s.idleTimer,null);await s.close();assert.equal(closed,1);
 });

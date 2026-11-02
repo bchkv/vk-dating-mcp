@@ -16,6 +16,12 @@ The login command opens a visible Chromium window. Sign in and open Dating, then
 
 On Linux, browser system libraries may also be needed: `npm run browser:install:ci`.
 
+## Expired login
+
+If a VK sign-in page is detected while opening the app, the server closes the headless browser and opens a visible browser using the same dedicated profile. Complete authentication manually, including any security checks. The interrupted operation returns `authenticationRequired: true` and is not retried. Call the tool again after sign-in; the server then returns to headless operation. The login window is not closed by the idle timer.
+
+Visible login uses bundled Chromium, or installed Google Chrome when only Headless Shell is available. If neither can start, the error explains how to install the full browser and run `npm run login`. Other app loading/layout failures do not automatically open a login window.
+
 ## MCP client configuration
 
 Copy `mcp-config.example.json` into your client's MCP configuration, replacing `/absolute/path/to/vk-dating-mcp` with your checkout path. Use an absolute Node executable path if your desktop client cannot find `node`.
