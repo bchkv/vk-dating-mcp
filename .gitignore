@@ -1,0 +1,13 @@
+node_modules/
+.browser-profile/
+logs/
+captures/
+outputs/
+work/
+backup*/
+.env
+.env.*
+!.env.example
+*.log
+*.jsonl
+.DS_Store

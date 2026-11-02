@@ -1,0 +1,22 @@
+{
+  "name": "vk-dating-mcp",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node cli.mjs",
+    "test": "node --test test/*.test.mjs",
+    "mcp": "node mcp.mjs",
+    "login": "node login.mjs",
+    "browser:install": "playwright install chromium",
+    "browser:install:ci": "playwright install --with-deps chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.56.0"
+  },
+  "description": "Local VK Dating MCP server with a persistent Playwright browser session",
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
