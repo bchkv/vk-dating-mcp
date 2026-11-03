@@ -3,6 +3,7 @@ import {navigate,openChat} from './adapter.mjs';
 import {sendMessage} from './send-message.mjs';
 import {historyOptions,readHistory} from './history.mjs';
 import {getStore} from './store.mjs';
+import {fetchProfile,cachedProfile} from './profiles.mjs';
 
 export function validateBatch(name,args) {
  if(name==='vk_get_conversations') {
@@ -45,7 +46,10 @@ export async function getConversation(frame,userId,options={}) {
  const tracking=store.observeConversation({userId,name,...history},options);
  for(const message of history.messages)await logOutcome('message.observed',{userId,messageId:message.messageId,outgoing:message.outgoing,text:message.text});
  await logOutcome('conversation.observed',{userId,count:history.messages.length});
- return {userId,name,...history,tracking,untrustedContent:true};
+ let profile=cachedProfile(userId,store),profileStatus=profile?'cached':'pending';
+ // Profile browsing is explicit; reading messages never opens extra profile panels.
+ profileStatus=profile?'cached':'not_requested';
+ return {userId,name,...history,profile,profileStatus,tracking,untrustedContent:true};
 }
 
 export async function getConversations(frame,args,read=getConversation) {

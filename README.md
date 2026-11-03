@@ -1,70 +1,53 @@
 # VK Dating MCP
 
-An unofficial, local MCP server for VK Dating. Uses Playwright with a dedicated persistent browser profile; no VK API credentials or model API keys are required.
+An unofficial local MCP server for VK Dating using a dedicated persistent Playwright browser profile. No VK API credentials or model API keys are required.
 
 ## Setup
 
-Requires Node.js 22.13+ and npm. Run from this repository:
+Requires Node.js 22.13+, npm and installed Google Chrome. Live sessions use the same installed Chrome binary in visible and headless modes. Playwright Chromium is used for offline fixture tests.
 
 ```sh
 npm ci
-npm run browser:install
 npm run login
 ```
 
-The login command opens a visible Chromium window. Sign in and open Dating, then press Enter in the terminal to close it. Stop any other server using the same profile before logging in. Subsequent MCP operations run headlessly and reuse the saved login.
+The login command opens the dedicated visible browser. Stop other MCP servers using the same profile first, sign in manually, then press Enter in the terminal. From ChatGPT, `vk_login` opens that window without rerunning an installer. An expired sign-in opens a visible window; after authentication, the same session is retained rather than immediately restarting headlessly. Browser sessions have no default idle shutdown and close when explicitly requested or the MCP server exits.
 
-On Linux, browser system libraries may also be needed: `npm run browser:install:ci`.
+## Conservative activity controls
 
-## Expired login
+Security warnings, blocked-account pages and verification challenges persistently pause browser activity in `data/activity-control.json`. `vk_security` with `action: "status"` reads this state locally. Only after the user manually resolves the restriction may `action: "resume", confirmResolved: true` clear it. Recorded `notBefore` unlock times are enforced; expiry never automatically resumes activity. No user-specific account lock or date is shipped in this repository.
 
-If a VK sign-in page is detected while opening the app, the server closes the headless browser and opens a visible browser using the same dedicated profile. Complete authentication manually, including any security checks. The interrupted operation returns `authenticationRequired: true` and is not retried. Call the tool again after sign-in; the server then returns to headless operation. The login window is not closed by the idle timer.
+Inbox snapshots are cached for 60 seconds and returned with freshness/security labels. During a pause, only a cached inbox may be returned; `vk_context` and `vk_tracking_stats` remain local-only. `refresh: true` requests a fresh overview subject to the same guard. Profiles are off by default. `vk_profile` explicitly reads one exact matched profile; `includeProfiles: true` on inbox opts into at most one missing/stale profile and may mark its chat read. Failed refreshes retain prior data.
 
-Visible login uses bundled Chromium, or installed Google Chrome when only Headless Shell is available. If neither can start, the error explains how to install the full browser and run `npm run login`. Other app loading/layout failures do not automatically open a login window.
+Local budgets are five seconds between browser operations, 30 operations per hour, one executed send per minute and ten executed sends per day. Attempted writes count even if their outcome is uncertain. These are conservative application budgets, not VK-published thresholds or guarantees against restrictions. Bulk sends, multi-chat batch reads and automated swiping are disabled. A cross-process operation lock prevents concurrent access from duplicate MCP registrations; configure just one server registration.
+
+Verification checks are completed manually. The plugin does not bypass them, disguise browser identity, or retry uncertain writes automatically. Using consistent sessions and lower activity does not guarantee VK will permit automation or establish the cause of any warning.
 
 ## MCP client configuration
 
-Copy `mcp-config.example.json` into your client's MCP configuration, replacing `/absolute/path/to/vk-dating-mcp` with your checkout path. Use an absolute Node executable path if your desktop client cannot find `node`.
+Copy `mcp-config.example.json`, replacing `/absolute/path/to/vk-dating-mcp` with your checkout path. Use an absolute Node executable if necessary. This is a local stdio server, not a hosted HTTP endpoint. stdout is reserved for JSON-RPC.
 
-```json
-{
-  "mcpServers": {
-    "vk-dating": {
-      "command": "node",
-      "args": ["/absolute/path/to/vk-dating-mcp/mcp.mjs"]
-    }
-  }
-}
-```
-
-This is a local stdio server, not a hosted HTTP endpoint. Your client must support local MCP processes. stdout is reserved for JSON-RPC messages.
-
-## Default interface
-
-Four task-focused tools are exposed by default. Browser startup, reuse, and local persistence are automatic.
+## Default tools
 
 | Tool | Purpose |
 | --- | --- |
-| `vk_inbox` | Compact overview previews and attention flags; no individual chat clicks. |
-| `vk_context` | One person’s cached messages, preview, profile if recorded, state, invitations and uncertain sends. |
-| `vk_history` | Explicit full/older-history read; opens the chat and may mark it read. |
-| `vk_send` | Local preview by default; `execute: true` verifies and sends one message. |
+| `vk_inbox` | Cached/fresh overview, scan coverage and visibility changes. Profiles are opt-in. |
+| `vk_context` | Cached messages, profile, preview, state and prior actions for one person. |
+| `vk_history` | Explicit history read; opens one chat and may mark it read. |
+| `vk_profile` | Explicitly read and cache one matched person's bio and visible profile fields. |
+| `vk_tracking_stats` | Active/historical counts and observed metrics with coverage limits. |
+| `vk_login` | Open the dedicated visible sign-in window. |
+| `vk_security` | Local pause status and explicit manual resume after resolving a restriction. |
+| `vk_send` | Preview locally; execute one explicitly authorized message with recipient checks. |
+| `vk_unmatch` | Preview locally; guarded Delete Like requires authorization and explicit confirmation. |
 
-Use inbox → context → send. Fetch history only when needed and opening the chat is acceptable. Context is bounded and reports omissions; it does not guarantee a model cannot overlook a detail. Unmatch is unavailable until its UI action and confirmation have been inspected.
+Use inbox → context → send. Read full history when needed for the requested assessment. Previews can omit/truncate text, IDs, direction and timestamps; they are never counted as verified messages. Context reports omissions and cannot guarantee a model never overlooks a detail. `VK_DATING_TOOLSET=advanced` exposes legacy diagnostics and tracking administration; conservative activity controls still apply.
 
-Set `VK_DATING_TOOLSET=advanced` in the MCP process environment and restart to expose the legacy diagnostics, tracking administration, editing, reactions, and batch operations alongside the four core tools. Legacy tools are rejected in core mode, not merely omitted from the list. The sections below document these advanced operations and the underlying storage model.
+## Conversation visibility and profiles
 
-## Preparing replies without opening chats
+Inbox traversal accumulates rows across scrolling. A completed scan means stable traversal of the rendered overview, not server verification. Two completed scans missing a known chat make it inactive with availability `not_visible`, preserving its history and previous state. Partial, filtered, failed and bounded scans cannot deactivate chats. Reappearance restores the prior state. A plugin unmatch verified in the current view is separately recorded as `unmatched_by_me`; unexplained absence never gets that attribution. Statistics separate active and historical conversations.
 
-Start with `vk_sync_overview`. It waits for the chat list to load, reads the visible previews and any explicit unread counts, and returns up to 20 cached messages per person by default. It never clicks a conversation row. `changedOnly: true` limits the returned rows to changed previews or positive unread counts; `includeCachedContext: false` omits the cached context and `cachedMessageLimit` accepts 1–100.
-
-```json
-{"changedOnly":true,"includeCachedContext":true,"cachedMessageLimit":20}
-```
-
-Prepare a draft from the fresh preview and cached context. Do not automatically open a changed conversation: opening it may send a read receipt. `vk_send_message` and `vk_send_messages` with `execute` omitted or false return local drafts with `liveRecipientVerified: false`; only explicit execution opens chats and checks live recipient names before sending.
-
-Overview previews stay separate from verified message records. They may be truncated, omit direction or time, repeat an older message, or lack unread counts. Even an unread badge of one does not prove exactly one complete new message. Missing counts/direction are null/unknown. The cache does not infer that absent chat rows are unmatched, deleted, or inactive. A full-history read remains available when context is insufficient and marking the conversation read is acceptable.
+Profile extraction uses the observed chat-header profile panel, verifies chat/profile names after selecting the exact person, and caches bios for seven days. Missing, empty and failed bios remain distinct. Source, observation time and truncation flags accompany the profile. Ordinary inbox and history reads do not automatically browse profiles. The user may explicitly request a profile refresh. Unknown profile UI layouts fail safely rather than selecting another person or guessing a destructive control.
 
 ## Reading conversation history
 
@@ -129,7 +112,7 @@ Every inferred record/state update requires `confidence` (0–1) and either a st
 
 These paths and SQLite sidecars are ignored by Git. SQLite files use mode 0600 and newly created data directories use 0700; the database is not encrypted at rest. There is no automatic retention period. `vk_clear_tracking` previews deletion by default; `execute: true` clears selected people or all SQLite data, while separate JSONL files and browser login remain unchanged.
 
-These paths are ignored by Git. Never commit or share them. Delete logs/captures manually when no longer needed. To remove the saved login, stop the server and delete its dedicated profile.
+`diagnostics/` contains bounded private failure snapshots and screenshots. `data/` also holds activity controls and inbox cache. These paths are ignored by Git. Never commit or share them. Delete logs/captures manually when no longer needed. To remove the saved login, stop the server and delete its dedicated profile.
 
 `VK_DATING_PROFILE_DIR`, `VK_DATING_LOG_DIR`, and `VK_DATING_DB_PATH` override the profile directory, JSONL directory, and SQLite file respectively. Defaults are relative to the source directory, independent of the client's working directory. Use absolute overrides and keep them outside any repository. Event files use restricted permissions; actions fail before starting when required audit logging is unavailable. An outcome logging failure may happen after an action, so inspect state before deciding what to do next.
 
@@ -149,10 +132,10 @@ Unofficial project, unaffiliated with VK. Use only with an account you control a
 
 After refreshing overview previews, call `vk_get_reply_context` with `userId` to retrieve cached messages (200 by default, maximum 500), latest preview, state and evidence, all recorded invitations, dates/Telegram records, and up to 100 recent send events in one response. Coverage flags distinguish missing actual history from cached messages omitted by the limit. Older cached pages remain available through `vk_get_cached_conversation`. This is context retrieval, not a guarantee that a model will never overlook a detail.
 
-Bio text is included only when explicitly recorded through `vk_record_profile`, with its source and observation time. Automatic profile extraction is not implemented. A missing bio stays null. Before sending, check existing invitations and uncertain dispatches; identical wording is not the only way to repeat an invitation.
+Bio text comes from explicit observed profile reads or `vk_record_profile`, with source and observation time. Missing/unavailable bios remain null; stale cached data is retained after a failed refresh. Before sending, check existing invitations and uncertain dispatches; identical wording is not the only way to repeat an invitation.
 
 ## Responsible automation
 
 No request frequency is guaranteed safe from platform restrictions. Keep browser operations sequential, avoid unsolicited bulk messaging and swiping, use overview/cache reads instead of repeated full-history loading, and stop on authentication challenges, throttling, or account warnings. Do not automatically retry uncertain sends. This server has serialized calls, explicit execution and process-local duplicate suppression; it does not yet provide a global rate limit or automatic challenge/throttle circuit breaker. Browser headlessness does not make activity undetectable. Follow the service's current terms; this project does not bypass bot detection or CAPTCHAs.
 
-Unmatching is not implemented: the available DOM fixtures do not include an identified unmatch action and confirmation dialog.
+Unmatching uses the observed Delete Like action. It requires an exact user ID, expected name, unique request ID, `execute: true`, and `confirmUnmatch: true` after user authorization. Unknown follow-up confirmations or uncertain outcomes are never retried automatically.

@@ -16,3 +16,4 @@ data/
 *.sqlite-*
 *.db
 *.db-*
+diagnostics/

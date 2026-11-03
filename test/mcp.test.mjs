@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {toolDefinitions,validate,callTool} from '../mcp-tools.mjs';
+import {selectTools} from '../public-tools.mjs';
 import {profileDir,projectDir} from '../session.mjs';
 import {resolve} from 'node:path';
 test('profile defaults to project directory, independent of working directory',()=>{
@@ -32,7 +33,7 @@ test('stdio initializes, lists tools, returns useful errors and closes without l
  const replies=output.trim().split('\n').map(JSON.parse);
  assert.equal(replies.length,5);
  assert.equal(replies[0].result.protocolVersion,'2024-11-05');
- assert.equal(replies[1].result.tools.length,toolDefinitions.length+4);
+ assert.equal(replies[1].result.tools.length,selectTools(toolDefinitions,'advanced').length);
  assert.equal(JSON.parse(replies[2].result.content[0].text).running,false);
  assert.equal(replies[3].result.isError,true);
  assert.match(replies[4].result.content[0].text,/Unknown tool/);

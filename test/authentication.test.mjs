@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Session} from '../session.mjs';
 import {AuthenticationRequiredError,isAuthenticationPage} from '../authentication.mjs';
 
-const page=(url,visible=false)=>({url:()=>url,isClosed:()=>false,bringToFront:async()=>{},getByRole:()=>({count:async()=>visible?1:0,nth(){return this;},isVisible:async()=>visible})});
+const page=(url,visible=false)=>{const p={url:()=>url,frames:()=>[p],isClosed:()=>false,bringToFront:async()=>{},goto:async()=>{},getByRole:()=>({count:async()=>visible?1:0,nth(){return this;},isVisible:async()=>visible}),locator:()=>({count:async()=>0,innerText:async()=>''})};return p;};
 test('detects VK authentication, but not unrelated pages or arbitrary app loading failures',async()=>{
  assert.equal(await isAuthenticationPage(page('https://id.vk.com/auth')),true);
  assert.equal(await isAuthenticationPage(page('https://vk.ru/dating',true)),true);
@@ -24,14 +24,14 @@ test('missing app on a sign-in page opens one headed session and does not retry 
 test('failed visible launch gives actionable guidance without pretending a window exists',async()=>{
  const s=new Session();s.page=page('https://id.vk.com/auth');s.context={close:async()=>{}};
  s.start=async()=>{throw Error('missing headed browser');};
- await assert.rejects(s.requireAuthentication(),/visible browser could not open/);
+ await assert.rejects(s.requireAuthentication(),/visible VK sign-in window could not open/);
  assert.equal(s.authPending,false);
 });
 test('unrelated layout failure does not open a login window',async()=>{
  const s=new Session();s.page=page('https://vk.ru/dating');s.context={close:async()=>{}};
  s.findAppFrame=async()=>{throw Error('missing app');};
  s.start=async()=>{throw Error('must not start a login window');};
- await assert.rejects(s.frame(),/No sign-in screen was detected/);
+ await assert.rejects(s.frame(),/not ready/);
  assert.equal(s.authPending,false);await s.close();
 });
 test('pending authentication is reused without launching another browser',async()=>{
@@ -41,11 +41,11 @@ test('pending authentication is reused without launching another browser',async(
  await s.close();
 });
 
-test('completed authentication closes headed browser before restarting headless',async()=>{
+test('completed authentication reuses the browser without another launch',async()=>{
  const s=new Session();s.page=page('https://vk.ru/dating');let closed=0;
  s.context={close:async()=>{closed++;}};s.authPending=true;s.headless=false;
  s.findAppFrame=async()=>({});
  let options;s.start=async value=>{options=value;return {started:true};};
  await Session.prototype.start.call(s);
- assert.equal(closed,1);assert.deepEqual(options,{headless:true});assert.equal(s.authPending,false);
+ assert.equal(closed,0);assert.equal(options,undefined);assert.equal(s.authPending,false);
 });

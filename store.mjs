@@ -11,7 +11,7 @@ export const stateEnums = {
   stage: stages, invitation_response: responses, waiting_on: ['me', 'them', 'neither'],
   telegram_status: ['not_exchanged', 'mine_shared', 'theirs_shared', 'both_shared'],
   next_action: ['reply', 'offer_time', 'confirm_details', 'follow_up', 'none'],
-  inactive_reason: ['declined', 'no_response', 'incompatible', 'my_choice'], date_outcome: outcomes,
+  inactive_reason: ['declined', 'no_response', 'incompatible', 'my_choice', 'no_longer_visible'], date_outcome: outcomes,
 };
 const defaults = {stage: 'new_match', invitation_response: 'pending', waiting_on: 'neither', telegram_status: 'not_exchanged', next_action: 'none', next_action_due_at: null, inactive_reason: null, date_outcome: 'pending'};
 const recordFields = {
@@ -102,6 +102,11 @@ export class ConversationStore {
       this.db.exec('ALTER TABLE records ADD COLUMN source_event_id TEXT');
     }
     this.db.prepare('UPDATE schema_version SET version=2').run();
+    this.db.exec(`CREATE TABLE IF NOT EXISTS conversation_presence (
+      person_id TEXT PRIMARY KEY REFERENCES conversations(person_id) ON DELETE CASCADE,
+      status TEXT NOT NULL, missing_scans INTEGER NOT NULL DEFAULT 0, last_seen_at TEXT, checked_at TEXT, reason TEXT
+    ); CREATE TABLE IF NOT EXISTS overview_scans (scan_id TEXT PRIMARY KEY,observed_at TEXT NOT NULL,complete INTEGER NOT NULL,reason TEXT);`);
+
   }
   close() { this.db.close(); }
   transaction(operation) {
@@ -134,10 +139,54 @@ export class ConversationStore {
     }
     this.db.prepare('UPDATE conversations SET state_json=?, evidence_json=? WHERE person_id=?').run(json(row.state), json(row.evidence), id);
   }
+  availability(id) {
+    const row=this.db.prepare('SELECT * FROM conversation_presence WHERE person_id=?').get(id);
+    return row?{status:row.status,active:!['not_visible','unmatched_by_me'].includes(row.status),missingScans:row.missing_scans,lastSeenAt:row.last_seen_at,lastCheckedAt:row.checked_at,reason:row.reason}: {status:'unknown',active:true,missingScans:0};
+  }
+  present(id,source='live_observation') {
+    const old=this.availability(id),now=this.now();
+    this.db.prepare(`INSERT INTO conversation_presence(person_id,status,missing_scans,last_seen_at,checked_at,reason) VALUES (?,'present',0,?,? ,?)
+      ON CONFLICT(person_id) DO UPDATE SET status='present',missing_scans=0,last_seen_at=excluded.last_seen_at,checked_at=excluded.checked_at,reason=excluded.reason`).run(id,now,now,source);
+    if(['possibly_missing','not_visible','unmatched_by_me'].includes(old.status))this.event('conversation.reappeared',id,{previous:old.status,source});
+  }
+  markUnmatched(id) {
+    personId(id);
+    return this.transaction(()=>{
+      this.ensure(id);
+      this.db.prepare(`INSERT INTO conversation_presence(person_id,status,missing_scans,checked_at,reason) VALUES (?,'unmatched_by_me',0,?,'plugin_unmatch_verified_in_view')
+       ON CONFLICT(person_id) DO UPDATE SET status='unmatched_by_me',checked_at=excluded.checked_at,reason=excluded.reason`).run(id,this.now());
+      return this.availability(id);
+    });
+  }
+  reconcileOverview(ids,{complete=false,scanId=randomUUID(),reason='unknown'}={}) {
+    if(!Array.isArray(ids)||new Set(ids).size!==ids.length)throw Error('Expected unique overview IDs');
+    ids.forEach(personId);
+    return this.transaction(()=>{
+      if(this.db.prepare('SELECT 1 FROM overview_scans WHERE scan_id=?').get(scanId))return {duplicateScan:true,changes:[]};
+      const now=this.now(),seen=new Set(ids),changes=[];
+      this.db.prepare('INSERT INTO overview_scans VALUES (?,?,?,?)').run(scanId,now,Number(complete),reason);
+      for(const id of ids){this.ensure(id);this.present(id,'overview_scan');}
+      if(complete){
+        const known=this.db.prepare('SELECT person_id FROM conversations').all();
+        for(const {person_id:id}of known){
+          if(seen.has(id))continue;
+          const old=this.availability(id);
+          if(['unmatched_by_me','not_visible'].includes(old.status))continue;
+          const misses=old.missingScans+1,status=misses>=2?'not_visible':'possibly_missing';
+          this.db.prepare(`INSERT INTO conversation_presence(person_id,status,missing_scans,checked_at,reason) VALUES (?,?,?,?,?)
+           ON CONFLICT(person_id) DO UPDATE SET status=excluded.status,missing_scans=excluded.missing_scans,checked_at=excluded.checked_at,reason=excluded.reason`).run(id,status,misses,now,'absent_from_completed_overview_scan');
+          this.event('conversation.visibility_changed',id,{previous:old.status,status,scanId,reason,unmatchCauseKnown:false});
+          changes.push({userId:id,name:this.state(id).display_name,...this.availability(id)});
+        }
+      }
+      return {scanId,complete,reason,changes,absenceConfirmedAsUnmatch:false};
+    });
+  }
   observeMatch(id, {name = null, matchId = null, matchedAt = null, source = 'explicit_observation'} = {}) {
     personId(id); matchedAt = timestamp(matchedAt, 'matchedAt');
     return this.transaction(() => {
       this.ensure(id, name, true);
+      this.present(id,source);
       const old = this.db.prepare('SELECT * FROM matches WHERE person_id=?').get(id);
       const now = this.now();
       this.db.prepare(`INSERT INTO matches VALUES (?, ?, ?, ?, ?) ON CONFLICT(person_id) DO UPDATE SET
@@ -158,6 +207,7 @@ export class ConversationStore {
     return this.transaction(() => {
       const old = this.state(id);
       this.ensure(id, preview.name ?? null, true);
+      this.present(id,'overview_preview');
       const changed = old?.preview_fingerprint !== fingerprint;
       let eventId = null;
       if (changed) eventId = this.event('preview.observed', id, data);
@@ -358,7 +408,7 @@ export class ConversationStore {
       this.event('action.logged', id, {action_id: actionId, action_type: entry.event, ...entry}, {occurredAt: entry.timestamp});
     });
   }
-  list({userIds, stage, waitingOn, limit = 100} = {}) {
+  list({userIds, stage, waitingOn, includeInactive = false, limit = 100} = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw Error('limit must be 1–200');
     if (userIds !== undefined && (!Array.isArray(userIds) || !userIds.length || userIds.length > 200)) throw Error('userIds must contain 1–200 IDs');
     userIds?.forEach(personId);
@@ -366,7 +416,7 @@ export class ConversationStore {
     if (waitingOn !== undefined && !stateEnums.waiting_on.includes(waitingOn)) throw Error('Invalid waitingOn');
     const rows = this.db.prepare('SELECT person_id FROM conversations ORDER BY last_checked_at DESC,person_id').all();
     return rows.map(row => this.get(row.person_id, {messageLimit: 0})).filter(row =>
-      (!userIds || userIds.includes(row.person_id)) && (!stage || row.state.stage === stage) && (!waitingOn || row.state.waiting_on === waitingOn)).slice(0, limit);
+      (includeInactive || stage==='inactive' || userIds || row.availability.active) && (!userIds || userIds.includes(row.person_id)) && (!stage || row.state.stage === stage) && (!waitingOn || row.state.waiting_on === waitingOn)).slice(0, limit);
   }
   get(id, {messageLimit = 50, beforeMessageId} = {}) {
     personId(id);
@@ -377,8 +427,10 @@ export class ConversationStore {
     const cursor = beforeMessageId === undefined ? all.length : all.findIndex(m => m.message_id === beforeMessageId);
     if (cursor < 0) throw Error('Cached history cursor not found');
     const start = Math.max(0, cursor - messageLimit);
+    const availability=this.availability(id);
+    const effectiveState=availability.active?row.state:{...row.state,stage:'inactive',waiting_on:'neither',next_action:'none',inactive_reason:availability.status==='unmatched_by_me'?'my_choice':'no_longer_visible'};
     return {person_id: id, display_name: row.display_name, first_seen_at: row.first_seen_at, last_checked_at: row.last_checked_at,
-      history_status: row.history_status, last_messages_checked_at: this.db.prepare("SELECT observed_at FROM history_pages WHERE person_id=? AND cursor=''").get(id)?.observed_at ?? null, state: row.state, field_evidence: row.evidence, preview: row.preview,
+      history_status: row.history_status, last_messages_checked_at: this.db.prepare("SELECT observed_at FROM history_pages WHERE person_id=? AND cursor=''").get(id)?.observed_at ?? null, state: effectiveState, availability, field_evidence: row.evidence, preview: row.preview,
       match: this.db.prepare('SELECT * FROM matches WHERE person_id=?').get(id) ?? null,
       messages: messageLimit ? all.slice(start, cursor) : [], message_count: all.length, has_more_stored: start > 0,
       records: this.db.prepare('SELECT * FROM records WHERE person_id=? ORDER BY first_seen_at').all(id).map(({values_json, ...record}) => ({...record, values: decode(values_json)})),
@@ -419,7 +471,8 @@ export class ConversationStore {
     const confirmedPeople = new Set(dates.filter(date => date.confirmation_status === 'confirmed').map(date => date.person_id));
     const invitedPeople = new Set(invitations.map(invitation => invitation.person_id));
     const confirmedInvitedPeople = [...invitedPeople].filter(id => confirmedPeople.has(id)).length;
-    return {conversations: count('conversations'), matches: count('matches'), messages: count('messages'),
+    const availabilityCounts=grouped('conversation_presence','status');
+    return {conversations: count('conversations'), historical_conversations:count('conversations'), active_conversations:count('conversations')-(availabilityCounts.not_visible??0)-(availabilityCounts.unmatched_by_me??0), availability_counts:availabilityCounts, matches: count('matches'), messages: count('messages'),
       messages_by_direction: grouped('messages', 'direction'), records_by_kind: grouped('records', 'kind'),
       history_coverage: grouped('conversations', 'history_status'), actions: count('action_log'),
       invitation_responses: invitationResponses, confirmed_dates: dates.filter(date => date.confirmation_status === 'confirmed').length,

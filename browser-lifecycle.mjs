@@ -3,6 +3,14 @@ import {navigate,openChat} from './adapter.mjs';
 // This state belongs to the MCP process, not to the user's regular Chrome profile.
 const states=new WeakMap();
 export async function withBrowser(session,name,args,operation) {
+ if(name==='vk_close'||name==='vk_status')return withBrowserActive(session,name,args,operation);
+ if(!session.guard)return withBrowserActive(session,name,args,operation);
+ return session.guard.run(name,args,async()=>{
+  try{const result=await withBrowserActive(session,name,args,operation);await session.checkSecurity();return result;}
+  catch(error){await session.checkSecurity();if(error.name==='ProfileUIBlockedError')session.guard.pause('profile_dialog_stuck');throw error;}
+ });
+}
+async function withBrowserActive(session,name,args,operation) {
  let state=states.get(session);
  if(!state){state={tab:'/',chatId:null};states.set(session,state);}
  if(name==='vk_close') return session.close();
@@ -12,7 +20,7 @@ export async function withBrowser(session,name,args,operation) {
  try {
   const wasRunning=!!session.page&&!session.page.isClosed();
   await session.start();
-  if(!wasRunning&&!['vk_start','vk_status','vk_navigate','vk_list_chats','vk_sync_overview','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)) {
+  if(!wasRunning&&!['vk_get_profile','vk_start','vk_status','vk_navigate','vk_list_chats','vk_sync_overview','vk_unmatch','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)) {
    const frame=await session.frame();
    await navigate(frame,state.tab);
    if(state.chatId&&name!=='vk_open_chat') {
@@ -24,7 +32,7 @@ export async function withBrowser(session,name,args,operation) {
    const frame=await session.frame();await navigate(frame,'/chats');
    await frame.locator(`[data-source="chats_list"][data-user-id="${args.userId}"], [data-source="new_chats_list"][data-user-id="${args.userId}"]`).waitFor({state:'visible',timeout:10000});
   }
-  if(['vk_open_chat','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)){state.tab='/chats';state.chatId=args.userId;}
+  if(['vk_open_chat','vk_unmatch','vk_send_message','vk_edit_message','vk_get_conversations','vk_send_messages'].includes(name)){state.tab='/chats';state.chatId=args.userId;}
   if(['vk_list_chats','vk_sync_overview'].includes(name)){state.tab='/chats';state.chatId=null;}
   if(name==='vk_navigate'){state.tab={profiles:'/',chats:'/chats',likes:'reactions',profile:'/tab_profile'}[args.tab];state.chatId=null;}
   result=await operation();
@@ -33,6 +41,6 @@ export async function withBrowser(session,name,args,operation) {
   return result;
  } finally {
   session.armIdleClose();
-  if(result&&typeof result==='object')result.browserLifecycle={closed:false,idleTimeoutSeconds:session.idleTimeoutMs/1000,dedicatedHeadlessShell:true};
+  if(result&&typeof result==='object')result.browserLifecycle={closed:false,idleTimeoutSeconds:session.idleTimeoutMs/1000,dedicatedHeadlessShell:false,browserEngine:"installed_chrome"};
  }
 }

@@ -1,4 +1,5 @@
 import {getStore, personId} from './store.mjs';
+import {cachedProfile} from './profiles.mjs';
 
 export function buildContextPack(args, store = getStore()) {
   const id = personId(args.userId);
@@ -11,7 +12,7 @@ export function buildContextPack(args, store = getStore()) {
   const omitted = Math.max(0, conversation.message_count - conversation.messages.length);
   return {
     userId: id, found: true, openedChats: 0, source: 'local_context_pack', untrustedContent: true,
-    profile: profile ? {...JSON.parse(profile.data_json), observed_at: profile.observed_at} : null,
+    profile: cachedProfile(id,store),
     conversation,
     priorInvitations: conversation.records.filter(record => record.kind === 'invitation'),
     datesAndTelegram: conversation.records.filter(record => record.kind !== 'invitation'),
